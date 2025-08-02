@@ -351,7 +351,7 @@ UserInputService.InputBegan:Connect(function(i,p)
     end
 end)
 
--- Aimbot Loop (Always Aim at Head or Torso)
+-- Aimbot Loop (Always Aim at Head or Torso, Perfectly)
 RunService.RenderStepped:Connect(function()
     if aiming then
         if not targetPart or not targetPart:IsDescendantOf(workspace) or (targetPart.Position-Camera.CFrame.Position).Magnitude>AIM_RADIUS then
@@ -360,15 +360,24 @@ RunService.RenderStepped:Connect(function()
         end
         if targetPart and targetHRP then
             local camPos = Camera.CFrame.Position
-            local aimPos = targetPart.Position
-            if USE_CAM_HEIGHT then aimPos=aimPos+Vector3.new(0,CAM_HEIGHT,0) end
-            if USE_STEALTH_MODE then
-                aimPos=aimPos+Vector3.new((math.random()-0.5)*0.02,(math.random()-0.5)*0.02,(math.random()-0.5)*0.02)
+            local aimPos = targetPart.Position + Vector3.new(0,targetPart.Size.Y/2,0) -- Center of part
+
+            -- Adjust to lock perfectly on Head/Torso
+            if LOCK_PART == "Head" then
+                aimPos = targetPart.Position
+            elseif LOCK_PART == "Torso" then
+                aimPos = targetPart.Position + Vector3.new(0,targetPart.Size.Y*0.3,0)
             end
-            -- Always lock to Head/Torso
+
+            if USE_CAM_HEIGHT then aimPos = aimPos + Vector3.new(0,CAM_HEIGHT,0) end
+            if USE_STEALTH_MODE then
+                aimPos = aimPos + Vector3.new((math.random()-0.5)*0.02,(math.random()-0.5)*0.02,(math.random()-0.5)*0.02)
+            end
+
             local dir = (aimPos-camPos).Unit
             local lookCFrame = CFrame.new(camPos,camPos+dir)*CFrame.Angles(math.rad(SCREEN_TILT),0,0)
-            Camera.CFrame = Camera.CFrame:Lerp(lookCFrame,AIM_SPEED/60)
+            Camera.CFrame = Camera.CFrame:Lerp(lookCFrame, math.clamp(AIM_SPEED/60,0,1))
+
             if USE_FACE_TARGET and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
                 LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.lookAt(LocalPlayer.Character.HumanoidRootPart.Position,targetHRP.Position)
             end
