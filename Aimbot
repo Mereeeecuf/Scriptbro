@@ -164,10 +164,23 @@ local function makeToggle(lbl,def,cb)
     btn.Parent=settingsFrame
 end
 
+local function makeDropdown(lbl,opts,def,cb)
+    local btn = makeButton("")
+    local v=def
+    btn.Text = lbl..": "..v
+    btn.MouseButton1Click:Connect(function()
+        v = (v==opts[1] and opts[2] or opts[1])
+        btn.Text = lbl..": "..v
+        cb(v)
+    end)
+    btn.Parent=settingsFrame
+end
+
 makeToggle("Offset Ketinggian",USE_CAM_HEIGHT,function(v) USE_CAM_HEIGHT=v; clearTarget() end)
 makeToggle("Filter Teman",USE_FRIEND_FILTER,function(v) USE_FRIEND_FILTER=v; clearTarget() end)
 makeToggle("Menghadap Target",USE_FACE_TARGET,function(v) USE_FACE_TARGET=v; clearTarget() end)
 makeToggle("Mode Siluman",USE_STEALTH_MODE,function(v) USE_STEALTH_MODE=v; clearTarget() end)
+makeDropdown("Bagian Terkunci",{"Head","Torso"},LOCK_PART,function(v) LOCK_PART=v; clearTarget() end)
 
 -- Toggle Panel
 settingsBtn.MouseButton1Click:Connect(function()
@@ -299,16 +312,16 @@ UserInputService.InputBegan:Connect(function(i,p)
     end
 end)
 
--- Aimbot Loop (Instant Accurate Head Lock)
+-- Aimbot Loop (Always Lock to Head or Torso, No Drift)
 RunService.RenderStepped:Connect(function()
     if aiming and targetPart and targetPart:IsDescendantOf(workspace) then
-        -- Always target the head
-        local head = targetPart.Parent:FindFirstChild("Head")
-        if head then
-            targetPart = head
+        -- Force target part to current LOCK_PART
+        local targetCharacter = targetPart.Parent
+        if targetCharacter and targetCharacter:FindFirstChild(LOCK_PART) then
+            targetPart = targetCharacter[LOCK_PART]
         end
 
-        -- Check if target in radius
+        -- Check distance
         if (targetPart.Position - Camera.CFrame.Position).Magnitude > AIM_RADIUS then
             local t = pickNearest()
             if t then
@@ -320,19 +333,24 @@ RunService.RenderStepped:Connect(function()
             end
         end
 
-        -- Instant aim at head
+        -- Calculate aim position
         local camPos = Camera.CFrame.Position
         local aimPos = targetPart.Position
-        if USE_CAM_HEIGHT then
+
+        -- Apply vertical offset if using head
+        if USE_CAM_HEIGHT and LOCK_PART == "Head" then
             aimPos = aimPos + Vector3.new(0, CAM_HEIGHT, 0)
         end
+
+        -- Optional stealth jitter
         if USE_STEALTH_MODE then
             aimPos = aimPos + Vector3.new((math.random()-0.5)*0.02,(math.random()-0.5)*0.02,(math.random()-0.5)*0.02)
         end
 
+        -- Instant camera lock
         Camera.CFrame = CFrame.new(camPos, aimPos) * CFrame.Angles(math.rad(SCREEN_TILT), 0, 0)
 
-        -- Optional: Face target
+        -- Optional: Rotate character to face target
         if USE_FACE_TARGET and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
             LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.lookAt(
                 LocalPlayer.Character.HumanoidRootPart.Position,
