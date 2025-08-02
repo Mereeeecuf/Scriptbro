@@ -1,5 +1,5 @@
---// Universal Aimlock Controller: Final Optimized Version (Chain Switching)
---// Author: Suttann (Modified by ChatGPT)
+--// Universal Aimlock Controller: Character-Aligned Version
+--// Author: Suttann (Modified by ChatGPT for Camera Alignment)
 
 -- Services
 local Players          = game:GetService("Players")
@@ -34,7 +34,7 @@ local function clearTarget()
     targetHRP  = nil
 end
 
--- UI Setup
+-- UI Setup (Same as Original)
 local gui = Instance.new("ScreenGui")
 gui.Name = "AimlockUI"
 gui.IgnoreGuiInset = true
@@ -117,7 +117,7 @@ dot.Position = UDim2.new(0.8,0,0.55,0)
 dot.BackgroundColor3 = Color3.fromRGB(150,0,0)
 Instance.new("UICorner", dot).CornerRadius = UDim.new(1,0)
 
--- Settings Panel
+-- Settings Panel (Same as Original)
 local settingsFrame = Instance.new("Frame", gui)
 settingsFrame.Size = UDim2.new(0,0,0,0)
 settingsFrame.Position = frame.Position + UDim2.new(0,frame.Size.X.Offset/2+8,0,0)
@@ -229,11 +229,6 @@ local function updateUI()
 end
 updateUI()
 
--- Helper: Detect in front
-local function isInFront(pos)
-    return Camera.CFrame.LookVector:Dot((pos - Camera.CFrame.Position).Unit) > 0
-end
-
 -- Get Targets
 local function getTargets()
     local targets = {}
@@ -263,7 +258,7 @@ local function pickNearest()
     return best
 end
 
--- Left/Right Panel
+-- Left/Right Buttons
 local miniFrame = Instance.new("Frame", gui)
 miniFrame.Size = UDim2.new(0,100,0,50)
 miniFrame.Position = UDim2.new(0.5,0,0.8,0)
@@ -293,7 +288,6 @@ rightBtn.TextColor3 = Color3.new(1,1,1)
 rightBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
 Instance.new("UICorner", rightBtn).CornerRadius = UDim.new(0,10)
 
--- Efficient chain-based left/right target switching
 local function switchTarget(side)
     if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
     local hrp = LocalPlayer.Character.HumanoidRootPart
@@ -351,25 +345,26 @@ UserInputService.InputBegan:Connect(function(i,p)
     end
 end)
 
--- Aimbot Loop (Always Aim at Head or Torso, Perfectly)
+-- Aimbot Loop: Camera aligned with character
 RunService.RenderStepped:Connect(function()
     if aiming then
         if not targetPart or not targetPart:IsDescendantOf(workspace) or (targetPart.Position-Camera.CFrame.Position).Magnitude>AIM_RADIUS then
             local t=pickNearest()
             if t then targetPart=t.part targetHRP=t.hrp else clearTarget() end
         end
-        if targetPart and targetHRP then
-            local camPos = Camera.CFrame.Position
-            local aimPos = targetPart.Position + Vector3.new(0,targetPart.Size.Y/2,0) -- Center of part
+        if targetPart and targetHRP and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = LocalPlayer.Character.HumanoidRootPart
+            local camPos = hrp.Position -- pivot around character
+            local aimPos = targetPart.Position
 
-            -- Adjust to lock perfectly on Head/Torso
+            -- Adjust to Head or Torso center
             if LOCK_PART == "Head" then
                 aimPos = targetPart.Position
             elseif LOCK_PART == "Torso" then
                 aimPos = targetPart.Position + Vector3.new(0,targetPart.Size.Y*0.3,0)
             end
 
-            if USE_CAM_HEIGHT then aimPos = aimPos + Vector3.new(0,CAM_HEIGHT,0) end
+            if USE_CAM_HEIGHT then camPos = camPos + Vector3.new(0,CAM_HEIGHT,0) end
             if USE_STEALTH_MODE then
                 aimPos = aimPos + Vector3.new((math.random()-0.5)*0.02,(math.random()-0.5)*0.02,(math.random()-0.5)*0.02)
             end
@@ -378,8 +373,8 @@ RunService.RenderStepped:Connect(function()
             local lookCFrame = CFrame.new(camPos,camPos+dir)*CFrame.Angles(math.rad(SCREEN_TILT),0,0)
             Camera.CFrame = Camera.CFrame:Lerp(lookCFrame, math.clamp(AIM_SPEED/60,0,1))
 
-            if USE_FACE_TARGET and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.lookAt(LocalPlayer.Character.HumanoidRootPart.Position,targetHRP.Position)
+            if USE_FACE_TARGET then
+                hrp.CFrame = CFrame.lookAt(hrp.Position,targetHRP.Position)
             end
         end
     end
