@@ -1,0 +1,376 @@
+--// Universal Aimlock Controller: Final Optimized Version (Chain Switching)
+--// Author: Suttann (Modified by ChatGPT)
+
+-- Services
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local TweenService     = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local SoundService     = game:GetService("SoundService")
+
+-- References
+local LocalPlayer = Players.LocalPlayer
+local Camera      = workspace.CurrentCamera
+
+-- Default Configuration
+local AIM_RADIUS        = 500
+local AIM_SPEED         = 15 -- Increased default speed for shooting games
+local LOCK_PART         = "Head"
+local USE_CAM_HEIGHT    = true
+local CAM_HEIGHT        = 2
+local SCREEN_TILT       = -5
+local USE_FRIEND_FILTER = true
+local USE_FACE_TARGET   = false
+local USE_STEALTH_MODE  = false
+local TOGGLE_KEY        = Enum.KeyCode.V
+
+-- Script State
+local aiming     = false
+local targetPart = nil
+local targetHRP  = nil
+
+local function clearTarget()
+    targetPart = nil
+    targetHRP  = nil
+end
+
+-- UI Setup
+local gui = Instance.new("ScreenGui")
+gui.Name = "AimlockUI"
+gui.IgnoreGuiInset = true
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+pcall(function() gui.Parent = game.CoreGui end)
+if not gui.Parent then gui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+LocalPlayer.CharacterAdded:Connect(function() gui.Parent = LocalPlayer:WaitForChild("PlayerGui") end)
+
+-- Watermark
+local watermark = Instance.new("TextLabel")
+watermark.Name = "Watermark"
+watermark.Parent = gui
+watermark.AnchorPoint = Vector2.new(1,1)
+watermark.Position = UDim2.new(1,-10,1,-10)
+watermark.Size = UDim2.new(0,200,0,30)
+watermark.BackgroundTransparency = 1
+watermark.Text = "Made by Suttann"
+watermark.Font = Enum.Font.GothamBold
+watermark.TextSize = 14
+watermark.TextColor3 = Color3.new(1,1,1)
+watermark.TextTransparency = 0.2
+watermark.TextXAlignment = Enum.TextXAlignment.Right
+
+-- Toggle Sound
+local toggleSound = Instance.new("Sound")
+toggleSound.SoundId = "rbxassetid://1524549907"
+toggleSound.Volume  = 1
+toggleSound.Parent  = SoundService
+
+-- Main Frame
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.new(0,240,0,96)
+frame.Position = UDim2.new(0.5,-120,0.1,0)
+frame.AnchorPoint = Vector2.new(0.5,0)
+frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+frame.Active = true
+frame.Draggable = true
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0,12)
+Instance.new("UIStroke", frame).Color = Color3.fromRGB(80,80,80)
+
+-- Title
+local title = Instance.new("TextLabel", frame)
+title.Text = "Pengontrol Aimlock"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 18
+title.TextColor3 = Color3.new(1,1,1)
+title.BackgroundTransparency = 1
+title.Position = UDim2.new(0,6,0,0)
+title.Size = UDim2.new(1,-40,0,28)
+title.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Settings Button
+local settingsBtn = Instance.new("TextButton", frame)
+settingsBtn.Size = UDim2.new(0,28,0,28)
+settingsBtn.Position = UDim2.new(1,-10,0,4)
+settingsBtn.AnchorPoint = Vector2.new(1,0)
+settingsBtn.Text = "-"
+settingsBtn.Font = Enum.Font.GothamBold
+settingsBtn.TextSize = 20
+settingsBtn.BackgroundColor3 = Color3.fromRGB(45,45,45)
+Instance.new("UICorner", settingsBtn).CornerRadius = UDim.new(1,0)
+Instance.new("UIStroke", settingsBtn).Color = Color3.fromRGB(70,70,70)
+
+-- Aimlock Toggle Button
+local toggleBtn = Instance.new("TextButton", frame)
+toggleBtn.Size = UDim2.new(0.7,0,0,36)
+toggleBtn.Position = UDim2.new(0.05,0,0.52,0)
+toggleBtn.Text = "AIMBOT: NONAKTIF"
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 18
+toggleBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+toggleBtn.TextColor3 = Color3.fromRGB(180,180,180)
+Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0,8)
+
+-- Status Dot
+local dot = Instance.new("Frame", frame)
+dot.Size = UDim2.new(0,18,0,18)
+dot.Position = UDim2.new(0.8,0,0.55,0)
+dot.BackgroundColor3 = Color3.fromRGB(150,0,0)
+Instance.new("UICorner", dot).CornerRadius = UDim.new(1,0)
+
+-- Settings Panel
+local settingsFrame = Instance.new("Frame", gui)
+settingsFrame.Size = UDim2.new(0,0,0,0)
+settingsFrame.Position = frame.Position + UDim2.new(0,frame.Size.X.Offset/2+8,0,0)
+settingsFrame.AnchorPoint = Vector2.new(0.5,0)
+settingsFrame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+settingsFrame.Active = true
+settingsFrame.Draggable = true
+settingsFrame.ClipsDescendants = true
+settingsFrame.Visible = false
+Instance.new("UICorner", settingsFrame).CornerRadius = UDim.new(0,12)
+Instance.new("UIStroke", settingsFrame).Color = Color3.fromRGB(85,85,85)
+local padding = Instance.new("UIPadding", settingsFrame)
+padding.PaddingTop, padding.PaddingLeft, padding.PaddingRight = UDim.new(0,8), UDim.new(0,8), UDim.new(0,8)
+local layout = Instance.new("UIListLayout", settingsFrame)
+layout.Padding = UDim.new(0,8)
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.VerticalAlignment = Enum.VerticalAlignment.Top
+
+-- Helpers
+local function makeButton(txt)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1,0,0,28)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 14
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.BackgroundColor3 = Color3.fromRGB(45,45,45)
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+    Instance.new("UIStroke", btn).Color = Color3.fromRGB(70,70,70)
+    btn.Text = txt
+    return btn
+end
+
+local function makeSlider(lbl,mn,mx,stp,def,cb)
+    local f = Instance.new("Frame", settingsFrame)
+    f.Size = UDim2.new(1,0,0,28)
+    f.BackgroundTransparency = 1
+    local label = Instance.new("TextLabel", f)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 14
+    label.TextColor3 = Color3.new(1,1,1)
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(0.6,0,1,0)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    local minus, plus = makeButton("-"), makeButton("+")
+    minus.Size, plus.Size = UDim2.new(0,26,1,0), UDim2.new(0,26,1,0)
+    minus.Position, plus.Position = UDim2.new(0.6,4,0,0), UDim2.new(0.6,36,0,0)
+    minus.Parent, plus.Parent = f,f
+    local v=def
+    local function upd(val)
+        v=math.clamp(val,mn,mx)
+        label.Text=lbl..": "..string.format("%.1f",v)
+        cb(v)
+    end
+    minus.MouseButton1Click:Connect(function() upd(v-stp) end)
+    plus.MouseButton1Click:Connect(function() upd(v+stp) end)
+    label.Parent=f; upd(def)
+end
+
+local function makeToggle(lbl,def,cb)
+    local btn = makeButton("")
+    btn.Text = lbl..": "..(def and "AKTIF" or "NONAKTIF")
+    local v=def
+    btn.MouseButton1Click:Connect(function()
+        v=not v
+        btn.Text=lbl..": "..(v and "AKTIF" or "NONAKTIF")
+        cb(v)
+    end)
+    btn.Parent=settingsFrame
+end
+
+local function makeDropdown(lbl,opts,def,cb)
+    local btn = makeButton("")
+    local v=def
+    btn.Text = lbl..": "..v
+    btn.MouseButton1Click:Connect(function()
+        v = (v==opts[1] and opts[2] or opts[1])
+        btn.Text = lbl..": "..v
+        cb(v)
+    end)
+    btn.Parent=settingsFrame
+end
+
+-- Populate Settings
+makeSlider("Kecepatan Aimlock",1,30,0.5,AIM_SPEED,function(v) AIM_SPEED=v; clearTarget() end)
+makeToggle("Offset Ketinggian",USE_CAM_HEIGHT,function(v) USE_CAM_HEIGHT=v; clearTarget() end)
+makeSlider("Sudut Miring",-15,15,1,SCREEN_TILT,function(v) SCREEN_TILT=v; clearTarget() end)
+makeToggle("Filter Teman",USE_FRIEND_FILTER,function(v) USE_FRIEND_FILTER=v; clearTarget() end)
+makeToggle("Menghadap Target",USE_FACE_TARGET,function(v) USE_FACE_TARGET=v; clearTarget() end)
+makeToggle("Mode Siluman",USE_STEALTH_MODE,function(v) USE_STEALTH_MODE=v; clearTarget() end)
+makeDropdown("Bagian Terkunci",{"Head","Torso"},LOCK_PART,function(v) LOCK_PART=v; clearTarget() end)
+
+-- Toggle Panel
+settingsBtn.MouseButton1Click:Connect(function()
+    toggleSound:Play()
+    settingsFrame.Visible = not settingsFrame.Visible
+    if settingsFrame.Visible then
+        TweenService:Create(settingsFrame,TweenInfo.new(0.3,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Size=UDim2.new(0,220,0,settingsFrame.UIListLayout.AbsoluteContentSize.Y+16)}):Play()
+    else
+        TweenService:Create(settingsFrame,TweenInfo.new(0.2,Enum.EasingStyle.Quad,Enum.EasingDirection.In),{Size=UDim2.new(0,0,0,0)}):Play()
+        task.delay(0.2,function() settingsFrame.Visible=false end)
+    end
+end)
+
+-- Update UI
+local function updateUI()
+    toggleBtn.Text = aiming and "AIMBOT: AKTIF" or "AIMBOT: NONAKTIF"
+    toggleBtn.TextColor3 = aiming and Color3.fromRGB(0,220,0) or Color3.fromRGB(180,180,180)
+    dot.BackgroundColor3 = aiming and Color3.fromRGB(0,200,0) or Color3.fromRGB(150,0,0)
+end
+updateUI()
+
+-- Helper: Detect in front
+local function isInFront(pos)
+    return Camera.CFrame.LookVector:Dot((pos - Camera.CFrame.Position).Unit) > 0
+end
+
+-- Get Targets
+local function getTargets()
+    local targets = {}
+    for _,plr in ipairs(Players:GetPlayers()) do
+        if plr~=LocalPlayer and (not USE_FRIEND_FILTER or not LocalPlayer:IsFriendsWith(plr.UserId)) then
+            local char = plr.Character
+            local hum = char and char:FindFirstChildWhichIsA("Humanoid")
+            if char and hum and hum.Health>0 then
+                local part = char:FindFirstChild(LOCK_PART)
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if part and hrp then
+                    table.insert(targets,{part=part,hrp=hrp})
+                end
+            end
+        end
+    end
+    return targets
+end
+
+-- Pick Nearest Target
+local function pickNearest()
+    local best,dist=nil,99999
+    for _,t in ipairs(getTargets()) do
+        local mag=(t.part.Position-Camera.CFrame.Position).Magnitude
+        if mag<dist then dist,best=mag,t end
+    end
+    return best
+end
+
+-- Left/Right Panel
+local miniFrame = Instance.new("Frame", gui)
+miniFrame.Size = UDim2.new(0,100,0,50)
+miniFrame.Position = UDim2.new(0.5,0,0.8,0)
+miniFrame.AnchorPoint = Vector2.new(0.5,0.5)
+miniFrame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+miniFrame.Active = true
+miniFrame.Draggable = true
+Instance.new("UICorner", miniFrame).CornerRadius = UDim.new(0,10)
+Instance.new("UIStroke", miniFrame).Color = Color3.fromRGB(80,80,80)
+
+local leftBtn = Instance.new("TextButton", miniFrame)
+leftBtn.Size = UDim2.new(0.5,0,1,0)
+leftBtn.Text = "◀"
+leftBtn.Font = Enum.Font.GothamBold
+leftBtn.TextSize = 28
+leftBtn.TextColor3 = Color3.new(1,1,1)
+leftBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+Instance.new("UICorner", leftBtn).CornerRadius = UDim.new(0,10)
+
+local rightBtn = Instance.new("TextButton", miniFrame)
+rightBtn.Size = UDim2.new(0.5,0,1,0)
+rightBtn.Position = UDim2.new(0.5,0,0,0)
+rightBtn.Text = "▶"
+rightBtn.Font = Enum.Font.GothamBold
+rightBtn.TextSize = 28
+rightBtn.TextColor3 = Color3.new(1,1,1)
+rightBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+Instance.new("UICorner", rightBtn).CornerRadius = UDim.new(0,10)
+
+-- Efficient chain-based left/right target switching
+local function switchTarget(side)
+    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
+    local hrp = LocalPlayer.Character.HumanoidRootPart
+    local currentPos = targetPart and targetPart.Position or hrp.Position
+
+    local targets = getTargets()
+    local sideTargets = {}
+
+    for _,t in ipairs(targets) do
+        if not targetPart or t.part ~= targetPart then
+            local dir = (t.part.Position - hrp.Position).Unit
+            local dotRight = hrp.CFrame.RightVector:Dot(dir)
+
+            if (side=="left" and dotRight < 0) or (side=="right" and dotRight > 0) then
+                local distToCurrent = (t.part.Position - currentPos).Magnitude
+                table.insert(sideTargets, {target=t, dist=distToCurrent})
+            end
+        end
+    end
+
+    table.sort(sideTargets, function(a,b)
+        return a.dist < b.dist
+    end)
+
+    if #sideTargets == 0 then return end
+
+    local chosen = sideTargets[1].target
+    targetPart = chosen.part
+    targetHRP = chosen.hrp
+end
+
+leftBtn.MouseButton1Click:Connect(function() switchTarget("left") end)
+rightBtn.MouseButton1Click:Connect(function() switchTarget("right") end)
+
+-- Toggle Aimbot
+toggleBtn.MouseButton1Click:Connect(function()
+    aiming=not aiming
+    clearTarget()
+    if aiming then
+        local t=pickNearest()
+        if t then targetPart=t.part targetHRP=t.hrp end
+    end
+    updateUI()
+end)
+
+UserInputService.InputBegan:Connect(function(i,p)
+    if not p and i.UserInputType==Enum.UserInputType.Keyboard and i.KeyCode==TOGGLE_KEY then
+        aiming=not aiming
+        clearTarget()
+        if aiming then
+            local t=pickNearest()
+            if t then targetPart=t.part targetHRP=t.hrp end
+        end
+        updateUI()
+    end
+end)
+
+-- Aimbot Loop
+RunService.RenderStepped:Connect(function()
+    if aiming then
+        if not targetPart or not targetPart:IsDescendantOf(workspace) or (targetPart.Position-Camera.CFrame.Position).Magnitude>AIM_RADIUS then
+            local t=pickNearest()
+            if t then targetPart=t.part targetHRP=t.hrp else clearTarget() end
+        end
+        if targetPart and targetHRP then
+            local camPos = Camera.CFrame.Position
+            local aimPos = targetPart.Position
+            if USE_CAM_HEIGHT then aimPos=aimPos+Vector3.new(0,CAM_HEIGHT,0) end
+            if USE_STEALTH_MODE then
+                aimPos=aimPos+Vector3.new((math.random()-0.5)*0.02,(math.random()-0.5)*0.02,(math.random()-0.5)*0.02)
+            end
+            local dir = (aimPos-camPos).Unit
+            local lookCFrame = CFrame.new(camPos,camPos+dir)*CFrame.Angles(math.rad(SCREEN_TILT),0,0)
+            Camera.CFrame = Camera.CFrame:Lerp(lookCFrame,AIM_SPEED/60)
+            if USE_FACE_TARGET and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.lookAt(LocalPlayer.Character.HumanoidRootPart.Position,targetHRP.Position)
+            end
+        end
+    end
+end)
